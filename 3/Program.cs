@@ -20,6 +20,7 @@ for (var i = 0; i < inputLines.Length; i++)
             Number = Convert.ToInt32(line.Substring(x.Index, x.Length), CultureInfo.InvariantCulture)
         }),
         SymbolPositions = Regex.Matches(line, @"\W").Where(x => x.Value != ".").Select(x => x.Index),
+        GearPositions = Regex.Matches(line, @"\*").Select(x => x.Index),
         LineString = line
     });
 }
@@ -29,9 +30,11 @@ var lineManager = new LineManager
     Lines = lines
 };
 
-var partNumbers = lineManager.GetPartNumbers().ToList();
+var partNumbers = lineManager.GetPartNumbers();
+var gearRatios = lineManager.GetGearRatiosPerLine();
 
-Console.WriteLine($"Partnumbers sum: {partNumbers.Sum()}");
+Console.WriteLine($"Part numbers sum: {partNumbers.Sum()}");
+Console.WriteLine($"Gear reations sum: {gearRatios.Sum()}");
 
 public class NumberSpan
 {
@@ -68,7 +71,6 @@ public class NumberSpan
     public bool OverlapsWithPosition(int position)
     {
         var result = Start <= position && position <= End;
-        Console.WriteLine($"Check if {Number} (From: {Start} To: {End}) overlaps with position: {position}: {result}");
         return result;
     }
 
@@ -84,6 +86,7 @@ public class Line
     public int Index { get; set; }
     public IEnumerable<NumberSpan> NumberSpans { get; init; } = [];
     public IEnumerable<int> SymbolPositions { get; set; } = [];
+    public IEnumerable<int> GearPositions { get; set; } = [];
     public string LineString { get; set; } = string.Empty;
 }
 
@@ -100,11 +103,38 @@ public class LineManager
         });
     }
 
-    public IEnumerable<int> GetNumbersNextToASymbol(Line line, params Line[] otherLines)
+    public IEnumerable<int> GetGearRatiosPerLine()
+    {
+        return Lines.Select(line => {
+            var surroundingLines = SurroundingLines(line).ToArray();
+            var gearRatios = GetGearRatiosForLine(line, surroundingLines).ToList();
+
+            return gearRatios.Sum();
+        });
+    }
+
+    private static IEnumerable<int> GetNumbersNextToASymbol(Line line, params Line[] otherLines)
     {
         var symbolsPositions = line.SymbolPositions.Union(otherLines.SelectMany(x => x.SymbolPositions));
         var numberSpans = line.NumberSpans.Where(x => x.OverlapsWithPositions(symbolsPositions));
         return numberSpans.DistinctBy(x => x.Id).Select(x => x.Number);
+    }
+
+    private static IEnumerable<int> GetGearRatiosForLine(Line line, params Line[] otherLines)
+    {
+        var gearPositions = line.GearPositions;
+
+        foreach (var position in gearPositions)
+        {
+            var numberSpans = line
+                .NumberSpans.Union(otherLines.SelectMany(x => x.NumberSpans))
+                .Where(x => x.OverlapsWithPosition(position));
+
+            yield return numberSpans.Count() == 2
+                ? numberSpans.Select(x => x.Number).Aggregate(1, (x, y) => x * y)
+                : 0;
+        }
+
     }
 
     /// <summary>
